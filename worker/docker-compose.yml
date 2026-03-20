@@ -49,7 +49,6 @@ services:
       GITSYNC_ROOT: /dags
       GITSYNC_PERIOD: "300s"
       GITSYNC_SSH: "false"
-      GITSYNC_SUBPATH: "dags"
     volumes:
       - /opt/airflow-data/dags:/dags
     restart: always
