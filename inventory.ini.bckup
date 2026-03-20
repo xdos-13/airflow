@@ -1,0 +1,8 @@
+; [controller]
+; controller ansible_host=192.168.123.2
+
+[workers]
+; worker1 ansible_host=192.168.123.143 
+; worker2 ansible_host=192.168.123.120
+; worker3 ansible_host=192.168.123.38
+worker4 ansible_host=192.168.123.250 ansible_user=moka ansible_ssh_private_key_file=/home/rida/.ssh/airflow_ansible ansible_python_interpreter=/usr/bin/python3.10

@@ -1,0 +1,70 @@
+- name: Fetch secrets on control node
+  hosts: localhost
+  gather_facts: false
+  vars:
+    secrets:
+      AIRFLOW__CORE__FERNET_KEY: "AIRFLOW__CORE__FERNET_KEY"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "AIRFLOW__WEBSERVER__SECRET_KEY"
+      AIRFLOW__API_AUTH__JWT_SECRET: "AIRFLOW__API_AUTH__JWT_SECRET"
+      AIRFLOW__API__SECRET_KEY: "AIRFLOW__API__SECRET_KEY"
+      POSTGRES_PASSWORD: "POSTGRES_PASSWORD"
+      RABBITMQ_DEFAULT_PASS: "RABBITMQ_DEFAULT_PASS"
+
+  tasks:
+    - name: Fetch secrets from 1Password CLI
+      command: op read "op://Airflow/{{ item.value }}/password"
+      register: op_result
+      loop: "{{ secrets | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true
+
+    - name: Build dictionary of secrets for remote hosts
+      set_fact:
+        docker_secrets: "{{ dict(op_result.results | map(attribute='item.key') | zip(op_result.results | map(attribute='stdout'))) }}"
+
+- name: Deploy workers with Docker secrets
+  hosts: workers
+  become: true
+  vars:
+    airflow_dir: /opt/airflow
+
+  tasks:
+    - name: Ensure airflow directories exist
+      file:
+        path: "{{ airflow_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - dags
+        - logs
+
+    - name: Copy docker-compose file
+      copy:
+        src: ../worker/docker-compose.yml
+        dest: "{{ airflow_dir }}/docker-compose.yml"
+
+    - name: Copy non-sensitive .env
+      copy:
+        src: ../worker/.env
+        dest: "{{ airflow_dir }}/.env"
+        mode: '0600'
+
+    # - name: Remove old Docker secrets (if exist)
+    #   community.docker.docker_secret:
+    #     name: "{{ item.key }}"
+    #     state: absent
+    #   loop: "{{ hostvars['localhost'].docker_secrets | dict2items }}"
+
+    - name: Create Docker secrets
+      community.docker.docker_secret:
+        name: "{{ item.key }}"
+        state: present
+        data: "{{ item.value }}" #used to be secret, switched it to data (secret was deprecated)
+      loop: "{{ hostvars['localhost'].docker_secrets | dict2items }}"
+
+    - name: Deploy worker stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ airflow_dir }}"
+        state: present
+        restarted: true

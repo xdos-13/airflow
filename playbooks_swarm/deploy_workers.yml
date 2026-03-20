@@ -1,0 +1,45 @@
+- name: Deploy Airflow Worker Node
+  hosts: workers
+  become: true
+  vars:
+    airflow_dir: /opt/airflow
+    manager_host: controller
+
+  tasks:
+
+    # 1. Ensure airflow directories exist
+    - name: Ensure airflow directories exist
+      file:
+        path: "{{ airflow_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - dags
+        - logs
+
+    # 2. Fetch the current worker join token from the controller
+    - name: Get worker join token from controller
+      delegate_to: "{{ manager_host }}"
+      become: true
+      command: docker swarm join-token worker -q
+      register: swarm_join_token
+      changed_when: false
+
+    # 3. Join the Swarm
+    - name: Join Swarm
+      command: docker swarm join --token {{ swarm_join_token.stdout }} {{ hostvars[manager_host]['ansible_host'] }}:2377
+      register: join_result
+      failed_when: join_result.rc not in [0,1]  # ignore "already part of swarm"
+      changed_when: join_result.rc == 0
+
+    # 4. Copy docker-compose file for worker stack
+    - name: Copy docker-compose file
+      copy:
+        src: ../worker/docker-compose.yml
+        dest: "{{ airflow_dir }}/docker-compose.yml"
+
+    # 5. Deploy worker stack
+    - name: Deploy worker stack
+      command: docker stack deploy -c docker-compose.yml airflow
+      args:
+        chdir: "{{ airflow_dir }}"

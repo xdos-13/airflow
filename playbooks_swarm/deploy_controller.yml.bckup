@@ -1,0 +1,60 @@
+- hosts: controller
+  become: true
+  vars:
+    airflow_dir: /opt/airflow
+    secrets:
+    # To be done using one pwd cli, airflow vault with values
+      AIRFLOW__CORE__FERNET_KEY: "AIRFLOW__CORE__FERNET_KEY"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "AIRFLOW__WEBSERVER__SECRET_KEY"
+      AIRFLOW__API_AUTH__JWT_SECRET: "AIRFLOW__API_AUTH__JWT_SECRET"
+      AIRFLOW__API__SECRET_KEY: "AIRFLOW__API__SECRET_KEY"
+      POSTGRES_PASSWORD: "POSTGRES_PASSWORD"
+      RABBITMQ_DEFAULT_PASS: "RABBITMQ_DEFAULT_PASS"
+
+  tasks:
+
+    - name: Ensure airflow directories exist
+      file:
+        path: "{{ airflow_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - dags
+        - logs
+
+    - name: Copy docker-compose file
+      copy:
+        src: ../controller/docker-compose.yml
+        dest: "{{ airflow_dir }}/docker-compose.yml"
+
+    - name: Copy non-sensitive .env
+      copy:
+        src: ../controller/.env
+        dest: "{{ airflow_dir }}/.env"
+        mode: '0600'
+
+    - name: Read secrets from 1Password CLI
+      command: op read "op://Airflow/{{ item.value }}/password"
+      register: op_result
+      loop: "{{ secrets | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+
+    - name: Remove old Docker secret (if exists)
+      community.docker.docker_secret:
+        name: "{{ item.item.key }}"
+        state: absent
+      loop: "{{ op_result.results }}"
+
+    - name: (Re)Create Docker secrets
+      community.docker.docker_secret:
+        name: "{{ item.item.key }}"
+        state: present
+        secret: "{{ item.stdout }}"
+      loop: "{{ op_result.results }}"
+
+    - name: Deploy controller stack
+      community.docker.docker_compose_v2:
+        project_src: "{{ airflow_dir }}"
+        state: present
+        restarted: true

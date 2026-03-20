@@ -1,0 +1,115 @@
+- name: Fetch secrets from 1Password on localhost
+  hosts: localhost
+  gather_facts: false
+  vars:
+    secrets:
+      AIRFLOW__CORE__FERNET_KEY: "AIRFLOW__CORE__FERNET_KEY"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "AIRFLOW__WEBSERVER__SECRET_KEY"
+      AIRFLOW__API_AUTH__JWT_SECRET: "AIRFLOW__API_AUTH__JWT_SECRET"
+      AIRFLOW__API__SECRET_KEY: "AIRFLOW__API__SECRET_KEY"
+      POSTGRES_PASSWORD: "POSTGRES_PASSWORD"
+      RABBITMQ_DEFAULT_PASS: "RABBITMQ_DEFAULT_PASS"
+  tasks:
+    - name: Fetch secrets from 1Password CLI
+      command: op read "op://Airflow/{{ item.value }}/password"
+      register: op_result
+      loop: "{{ secrets | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true
+
+    - name: Build dictionary of secrets
+      set_fact:
+        docker_secrets: "{{ dict(op_result.results | map(attribute='item.key') | zip(op_result.results | map(attribute='stdout'))) }}"
+      no_log: true
+
+    - name: Fetch SSH key from 1Password CLI
+      command: op read "op://Airflow/GIT_SSH_KEY/private key"
+      register: ssh_key_result
+      no_log: true
+
+    - name: Add SSH key to secrets dict
+      set_fact:
+        docker_secrets: "{{ docker_secrets | combine({'GIT_SSH_KEY': ssh_key_result.stdout}) }}"
+      no_log: true
+
+- name: Setup Airflow Controller node
+  hosts: controller
+  become: true
+  gather_facts: true
+  vars:
+    repo_dir: /opt/airflow
+    airflow_dir: /opt/airflow/poc_orchestrator/ansible_setup/controller
+    secrets_dir: /opt/airflow-secrets
+    data_dir: /opt/airflow-data
+    controller_docker_secrets: "{{ hostvars['localhost'].docker_secrets }}"
+  tasks:
+    - name: Ensure secrets directory exists
+      file:
+        path: "{{ secrets_dir }}"
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+
+    - name: Ensure data directories exist
+      file:
+        path: "{{ data_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - logs    # dags created by git-sync
+
+    - name: Write raw secrets to files
+      copy:
+        content: "{{ item.value }}"
+        dest: "{{ secrets_dir }}/{{ item.key }}"
+        mode: '0644'
+        owner: root
+        group: root
+      loop: "{{ controller_docker_secrets | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+      no_log: true
+
+    - name: Set correct permissions on SSH key
+      file:
+        path: "{{ secrets_dir }}/GIT_SSH_KEY"
+        mode: '0600'
+
+    - name: Clone or update repo with sparse checkout
+      shell: |
+        if [ ! -d "{{ repo_dir }}/.git" ]; then
+          git clone --no-checkout --depth 1 git@bitbucket.org:mo-ka/engineering.git {{ repo_dir }}
+        fi
+        cd {{ repo_dir }}
+        git fetch --depth 1
+        git sparse-checkout init --cone
+        git sparse-checkout set poc_orchestrator/ansible_setup/controller
+        git checkout main
+        git pull origin main
+      args:
+        executable: /bin/bash
+      environment:
+        GIT_SSH_COMMAND: "ssh -i {{ secrets_dir }}/GIT_SSH_KEY -o StrictHostKeyChecking=no"
+
+    - name: Write derived connection string secrets
+      copy:
+        content: "{{ item.value }}"
+        dest: "{{ secrets_dir }}/{{ item.key }}"
+        mode: '0644'
+        owner: root
+        group: root
+      loop:
+        - key: SQL_ALCHEMY_CONN
+          value: "postgresql+psycopg2://airflow:{{ controller_docker_secrets.POSTGRES_PASSWORD }}@postgres/airflow"
+        - key: CELERY_BROKER_URL
+          value: "amqp://airflow:{{ controller_docker_secrets.RABBITMQ_DEFAULT_PASS }}@rabbitmq:5672//"
+        - key: CELERY_RESULT_BACKEND
+          value: "db+postgresql://airflow:{{ controller_docker_secrets.POSTGRES_PASSWORD }}@postgres/airflow"
+      no_log: true
+
+    - name: Deploy controller stack
+      command: docker compose up -d
+      args:
+        chdir: "{{ airflow_dir }}"

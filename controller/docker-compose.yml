@@ -1,0 +1,139 @@
+x-airflow-common:
+  &airflow-common
+  image: apache/airflow:latest
+  env_file:
+    - .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__CORE__FERNET_KEY_CMD: "cat /run/secrets/AIRFLOW__CORE__FERNET_KEY"
+    AIRFLOW__WEBSERVER__SECRET_KEY_CMD: "cat /run/secrets/AIRFLOW__WEBSERVER__SECRET_KEY"
+    AIRFLOW__API_AUTH__JWT_SECRET_CMD: "cat /run/secrets/AIRFLOW__API_AUTH__JWT_SECRET"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: "cat /run/secrets/SQL_ALCHEMY_CONN"
+    AIRFLOW__CELERY__BROKER_URL_CMD: "cat /run/secrets/CELERY_BROKER_URL"
+    AIRFLOW__CELERY__RESULT_BACKEND_CMD: "cat /run/secrets/CELERY_RESULT_BACKEND"
+    AIRFLOW__API__AUTH_BACKEND: airflow.api.auth.backend.default
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+  volumes:
+    - /opt/airflow-data/dags:/opt/airflow/dags
+    - /opt/airflow-data/logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
+  secrets:
+    - AIRFLOW__CORE__FERNET_KEY
+    - AIRFLOW__API_AUTH__JWT_SECRET
+    - AIRFLOW__WEBSERVER__SECRET_KEY
+    - SQL_ALCHEMY_CONN
+    - CELERY_BROKER_URL
+    - CELERY_RESULT_BACKEND
+
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_DB: airflow
+      POSTGRES_PASSWORD_FILE: /run/secrets/POSTGRES_PASSWORD
+    secrets:
+      - POSTGRES_PASSWORD
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 5s
+      retries: 5
+      start_period: 10s
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "15672:15672"
+      - "5672:5672"
+    environment:
+      RABBITMQ_DEFAULT_USER: airflow
+    secrets:
+      - RABBITMQ_DEFAULT_PASS
+    entrypoint: ["/bin/bash", "-c", "RABBITMQ_DEFAULT_PASS=$(cat /run/secrets/RABBITMQ_DEFAULT_PASS) exec docker-entrypoint.sh rabbitmq-server"]
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      retries: 5
+      start_period: 20s
+
+  git-sync:
+    image: registry.k8s.io/git-sync/git-sync:v4.2.1
+    environment:
+      GITSYNC_REPO: "git@bitbucket.org:mo-ka/dags.git"
+      GITSYNC_BRANCH: main
+      GITSYNC_ROOT: /dags
+      GITSYNC_PERIOD: "300s"
+      GITSYNC_SSH: "true"
+      GITSYNC_SSH_KEY_FILE: "/etc/git-secret/ssh"
+    volumes:
+      - /opt/airflow-data/dags:/dags
+      - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
+    restart: always
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command: >
+      -c "
+        airflow db migrate &&
+        airflow users create --username admin --password admin --firstname moka --lastname loka --role Admin --email poca@mo-ka.com
+        "
+
+  airflow-api-server:
+    <<: *airflow-common
+    command: api-server
+    ports:
+      - "8080:8080"
+    restart: always
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: always
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: triggerer
+    restart: always
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    command: dag-processor
+    restart: always
+
+  flower:
+    <<: *airflow-common
+    command: celery flower
+    ports:
+      - "5555:5555"
+    restart: always
+
+volumes:
+  postgres-db:
+
+secrets:
+  AIRFLOW__CORE__FERNET_KEY:
+    file: /opt/airflow-secrets/AIRFLOW__CORE__FERNET_KEY
+  AIRFLOW__API_AUTH__JWT_SECRET:
+    file: /opt/airflow-secrets/AIRFLOW__API_AUTH__JWT_SECRET
+  AIRFLOW__WEBSERVER__SECRET_KEY:
+    file: /opt/airflow-secrets/AIRFLOW__WEBSERVER__SECRET_KEY
+  POSTGRES_PASSWORD:
+    file: /opt/airflow-secrets/POSTGRES_PASSWORD
+  RABBITMQ_DEFAULT_PASS:
+    file: /opt/airflow-secrets/RABBITMQ_DEFAULT_PASS
+  SQL_ALCHEMY_CONN:
+    file: /opt/airflow-secrets/SQL_ALCHEMY_CONN
+  CELERY_BROKER_URL:
+    file: /opt/airflow-secrets/CELERY_BROKER_URL
+  CELERY_RESULT_BACKEND:
+    file: /opt/airflow-secrets/CELERY_RESULT_BACKEND

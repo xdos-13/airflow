@@ -1,0 +1,87 @@
+- name: Setup Airflow Controller with Swarm and Secrets
+  hosts: localhost
+  gather_facts: false
+  vars:
+    airflow_dir: /opt/airflow
+    secrets:
+      AIRFLOW__CORE__FERNET_KEY: "AIRFLOW__CORE__FERNET_KEY"
+      AIRFLOW__WEBSERVER__SECRET_KEY: "AIRFLOW__WEBSERVER__SECRET_KEY"
+      AIRFLOW__API_AUTH__JWT_SECRET: "AIRFLOW__API_AUTH__JWT_SECRET"
+      AIRFLOW__API__SECRET_KEY: "AIRFLOW__API__SECRET_KEY"
+      POSTGRES_PASSWORD: "POSTGRES_PASSWORD"
+      RABBITMQ_DEFAULT_PASS: "RABBITMQ_DEFAULT_PASS"
+
+  tasks:
+
+    # 1. Fetch secrets from 1Password on localhost
+    - name: Fetch secrets from 1Password CLI
+      command: op read "op://Airflow/{{ item.value }}/password"
+      register: op_result
+      loop: "{{ secrets | dict2items }}"
+      loop_control:
+        label: "{{ item.key }}"
+          #no_log: true
+
+    - name: Build dictionary of secrets
+      set_fact:
+        docker_secrets: "{{ dict(op_result.results | map(attribute='item.key') | zip(op_result.results | map(attribute='stdout'))) }}"
+          #no_log: true
+
+# 2. Push secrets and deploy controller stack
+- name: Setup Airflow Controller node
+  hosts: controller
+  become: true
+  gather_facts: true
+  vars:
+    airflow_dir: /opt/airflow
+    controller_docker_secrets: "{{ hostvars['localhost'].docker_secrets }}"
+  tasks:
+
+    - name: Ensure airflow directories exist
+      file:
+        path: "{{ airflow_dir }}/{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - dags
+        - logs
+
+    - name: Copy docker-compose file
+      copy:
+        src: ../controller/docker-compose.yml
+        dest: "{{ airflow_dir }}/docker-compose.yml"
+
+    - name: Copy non-sensitive .env
+      copy:
+        src: ../controller/.env
+        dest: "{{ airflow_dir }}/.env"
+        mode: '0600'
+
+    - name: Initialize Docker Swarm if not active
+      command: docker swarm init --advertise-addr {{ ansible_host }}
+      register: swarm_init
+      failed_when: swarm_init.rc not in [0,1]
+      changed_when: swarm_init.rc == 0
+
+    - name: Get worker join token
+      command: docker swarm join-token worker -q
+      register: swarm_join_token
+      changed_when: false
+
+    - name: Remove old Docker secrets if exist
+      community.docker.docker_secret:
+        name: "{{ item.key }}"
+        state: absent
+      loop: "{{ controller_docker_secrets | dict2items }}"
+
+    - name: Create Docker secrets in Swarm
+      community.docker.docker_secret:
+        name: "{{ item.key }}"
+        state: present
+        data: "{{ item.value }}"
+      loop: "{{ controller_docker_secrets | dict2items }}"
+
+    - name: Deploy controller stack
+      command: docker stack deploy -c docker-compose.yml airflow
+      args:
+        chdir: "{{ airflow_dir }}"

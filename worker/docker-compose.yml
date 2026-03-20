@@ -1,0 +1,58 @@
+services:
+  airflow-worker:
+    image: apache/airflow:latest
+    env_file:
+      - .env
+    environment:
+      AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+      AIRFLOW__CORE__FERNET_KEY_CMD: "cat /run/secrets/AIRFLOW__CORE__FERNET_KEY"
+      AIRFLOW__WEBSERVER__SECRET_KEY_CMD: "cat /run/secrets/AIRFLOW__WEBSERVER__SECRET_KEY"
+      AIRFLOW__API_AUTH__JWT_SECRET_CMD: "cat /run/secrets/AIRFLOW__API_AUTH__JWT_SECRET"
+      AIRFLOW__API__SECRET_KEY_CMD: "cat /run/secrets/AIRFLOW__API__SECRET_KEY"
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: "cat /run/secrets/SQL_ALCHEMY_CONN"
+      AIRFLOW__CELERY__BROKER_URL_CMD: "cat /run/secrets/CELERY_BROKER_URL"
+      AIRFLOW__CELERY__RESULT_BACKEND_CMD: "cat /run/secrets/CELERY_RESULT_BACKEND"
+      AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://${AIRFLOW_CONTROLLER_IP}:8080/execution"
+    volumes:
+      - /opt/airflow-data/dags:/opt/airflow/dags
+      - /opt/airflow-data/logs:/opt/airflow/logs
+    command: celery worker
+    restart: always
+    secrets:
+      - AIRFLOW__CORE__FERNET_KEY
+      - AIRFLOW__WEBSERVER__SECRET_KEY
+      - AIRFLOW__API_AUTH__JWT_SECRET
+      - AIRFLOW__API__SECRET_KEY
+      - SQL_ALCHEMY_CONN
+      - CELERY_BROKER_URL
+      - CELERY_RESULT_BACKEND
+
+  git-sync:
+    image: registry.k8s.io/git-sync/git-sync:v4.2.1
+    environment:
+      GITSYNC_REPO: "git@bitbucket.org:mo-ka/dags.git"
+      GITSYNC_BRANCH: main
+      GITSYNC_ROOT: /dags
+      GITSYNC_PERIOD: "300s"
+      GITSYNC_SSH: "true"
+      GITSYNC_SSH_KEY_FILE: "/etc/git-secret/ssh"
+    volumes:
+      - /opt/airflow-data/dags:/dags
+      - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
+    restart: always
+
+secrets:
+  AIRFLOW__CORE__FERNET_KEY:
+    file: /opt/airflow-secrets/AIRFLOW__CORE__FERNET_KEY
+  AIRFLOW__WEBSERVER__SECRET_KEY:
+    file: /opt/airflow-secrets/AIRFLOW__WEBSERVER__SECRET_KEY
+  AIRFLOW__API_AUTH__JWT_SECRET:
+    file: /opt/airflow-secrets/AIRFLOW__API_AUTH__JWT_SECRET
+  AIRFLOW__API__SECRET_KEY:
+    file: /opt/airflow-secrets/AIRFLOW__API__SECRET_KEY
+  SQL_ALCHEMY_CONN:
+    file: /opt/airflow-secrets/SQL_ALCHEMY_CONN
+  CELERY_BROKER_URL:
+    file: /opt/airflow-secrets/CELERY_BROKER_URL
+  CELERY_RESULT_BACKEND:
+    file: /opt/airflow-secrets/CELERY_RESULT_BACKEND
