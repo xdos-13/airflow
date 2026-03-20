@@ -41,17 +41,18 @@ services:
   #     - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
   #   restart: always
 
-  git-sync:
-      image: registry.k8s.io/git-sync/git-sync:v4.2.1
-      environment:
-        GITSYNC_REPO: "https://github.com/xdos-13/airflow.git"
-        GITSYNC_BRANCH: main
-        GITSYNC_ROOT: /dags
-        GITSYNC_PERIOD: "300s"
-        GITSYNC_SSH: "false"
-      volumes:
-        - /opt/airflow-data/dags:/dags
-      restart: always
+git-sync:
+    image: registry.k8s.io/git-sync/git-sync:v4.2.1
+    environment:
+      GITSYNC_REPO: "https://github.com/xdos-13/airflow.git"
+      GITSYNC_BRANCH: main
+      GITSYNC_ROOT: /dags
+      GITSYNC_PERIOD: "300s"
+      GITSYNC_SSH: "false"
+      GITSYNC_SUBPATH: "dags"
+    volumes:
+      - /opt/airflow-data/dags:/dags
+    restart: always
       
 secrets:
   AIRFLOW__CORE__FERNET_KEY:
