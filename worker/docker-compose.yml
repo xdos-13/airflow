@@ -41,7 +41,7 @@ services:
   #     - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
   #   restart: always
 
-git-sync:
+  git-sync:
     image: registry.k8s.io/git-sync/git-sync:v4.2.1
     environment:
       GITSYNC_REPO: "https://github.com/xdos-13/airflow.git"
