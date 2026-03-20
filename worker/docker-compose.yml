@@ -14,7 +14,7 @@ services:
       AIRFLOW__CELERY__RESULT_BACKEND_CMD: "cat /run/secrets/CELERY_RESULT_BACKEND"
       AIRFLOW__CORE__EXECUTION_API_SERVER_URL: "http://${AIRFLOW_CONTROLLER_IP}:8080/execution"
     volumes:
-      - /opt/airflow-data/dags:/opt/airflow/dags
+      - /opt/airflow-data/dags/dags.git:/opt/airflow/dags
       - /opt/airflow-data/logs:/opt/airflow/logs
     command: celery worker
     restart: always

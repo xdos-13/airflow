@@ -15,7 +15,7 @@ x-airflow-common:
     AIRFLOW__API__AUTH_BACKEND: airflow.api.auth.backend.default
     AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
   volumes:
-    - /opt/airflow-data/dags:/opt/airflow/dags
+    - /opt/airflow-data/dags/dags.git:/opt/airflow/dags
     - /opt/airflow-data/logs:/opt/airflow/logs
   depends_on:
     postgres:
@@ -65,18 +65,31 @@ services:
       retries: 5
       start_period: 20s
 
+  # git-sync:
+  #   image: registry.k8s.io/git-sync/git-sync:v4.2.1
+  #   environment:
+  #     GITSYNC_REPO: "git@bitbucket.org:mo-ka/dags.git"
+  #     GITSYNC_BRANCH: main
+  #     GITSYNC_ROOT: /dags
+  #     GITSYNC_PERIOD: "300s"
+  #     GITSYNC_SSH: "true"
+  #     GITSYNC_SSH_KEY_FILE: "/etc/git-secret/ssh"
+  #   volumes:
+  #     - /opt/airflow-data/dags:/dags
+  #     - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
+  #   restart: always
+
   git-sync:
     image: registry.k8s.io/git-sync/git-sync:v4.2.1
     environment:
-      GITSYNC_REPO: "git@bitbucket.org:mo-ka/dags.git"
+      GITSYNC_REPO: "https://github.com/xdos-13/dags.git"
       GITSYNC_BRANCH: main
       GITSYNC_ROOT: /dags
       GITSYNC_PERIOD: "300s"
-      GITSYNC_SSH: "true"
-      GITSYNC_SSH_KEY_FILE: "/etc/git-secret/ssh"
+      GITSYNC_SSH: "false"
+      GITSYNC_SUBPATH: "dags"
     volumes:
       - /opt/airflow-data/dags:/dags
-      - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
     restart: always
 
   airflow-init:

@@ -16,22 +16,22 @@
       loop: "{{ secrets | dict2items }}"
       loop_control:
         label: "{{ item.key }}"
-      no_log: true
+      # no_log: true
 
     - name: Build dictionary of secrets
       set_fact:
         docker_secrets: "{{ dict(op_result.results | map(attribute='item.key') | zip(op_result.results | map(attribute='stdout'))) }}"
-      no_log: true
+    #   no_log: true
 
-    - name: Fetch SSH key from 1Password CLI
-      command: op read "op://Airflow/GIT_SSH_KEY/private key"
-      register: ssh_key_result
-      no_log: true
+    # - name: Fetch SSH key from 1Password CLI
+    #   command: op read "op://Airflow/GIT_SSH_KEY/private key"
+    #   register: ssh_key_result
+    #   no_log: true
 
-    - name: Add SSH key to secrets dict
-      set_fact:
-        docker_secrets: "{{ docker_secrets | combine({'GIT_SSH_KEY': ssh_key_result.stdout}) }}"
-      no_log: true
+    # - name: Add SSH key to secrets dict
+    #   set_fact:
+    #     docker_secrets: "{{ docker_secrets | combine({'GIT_SSH_KEY': ssh_key_result.stdout}) }}"
+    #   no_log: true
 
 - name: Setup Airflow Controller node
   hosts: controller
@@ -39,10 +39,12 @@
   gather_facts: true
   vars:
     repo_dir: /opt/airflow
-    airflow_dir: /opt/airflow/poc_orchestrator/ansible_setup/controller
+    airflow_dir: /opt/airflow/controller
     secrets_dir: /opt/airflow-secrets
     data_dir: /opt/airflow-data
     controller_docker_secrets: "{{ hostvars['localhost'].docker_secrets }}"
+    git_repo: "https://github.com/xdos-13/airflow.git"
+    git_branch: "main"
   tasks:
     - name: Ensure secrets directory exists
       file:
@@ -72,26 +74,40 @@
         label: "{{ item.key }}"
       no_log: true
 
-    - name: Set correct permissions on SSH key
-      file:
-        path: "{{ secrets_dir }}/GIT_SSH_KEY"
-        mode: '0600'
+        # - name: Set correct permissions on SSH key
+        #   file:
+        #     path: "{{ secrets_dir }}/GIT_SSH_KEY"
+        #     mode: '0600'
+
+        #- name: Clone or update repo with sparse checkout
+        #  shell: |
+        #    if [ ! -d "{{ repo_dir }}/.git" ]; then
+        #      git clone --no-checkout --depth 1 git@bitbucket.org:mo-ka/engineering.git {{ repo_dir }}
+        #    fi
+        #    cd {{ repo_dir }}
+        #    git fetch --depth 1
+        #    git sparse-checkout init --cone
+        #    git sparse-checkout set poc_orchestrator/ansible_setup/worker
+        #    git checkout {{ git_branch }}
+        #    git pull origin {{ git_branch }}
+        #  args:
+        #    executable: /bin/bash
+          # environment:
+          #   GIT_SSH_COMMAND: "ssh -i {{ secrets_dir }}/GIT_SSH_KEY -o StrictHostKeyChecking=no"
 
     - name: Clone or update repo with sparse checkout
       shell: |
         if [ ! -d "{{ repo_dir }}/.git" ]; then
-          git clone --no-checkout --depth 1 git@bitbucket.org:mo-ka/engineering.git {{ repo_dir }}
+          git clone --no-checkout --depth 1 --branch {{ git_branch }} {{ git_repo }} {{ repo_dir }}
         fi
         cd {{ repo_dir }}
-        git fetch --depth 1
+        git fetch --depth 1 origin {{ git_branch }}
         git sparse-checkout init --cone
-        git sparse-checkout set poc_orchestrator/ansible_setup/controller
-        git checkout main
-        git pull origin main
+        git sparse-checkout set worker
+        git checkout {{ git_branch }}
+        git pull origin {{ git_branch }}
       args:
         executable: /bin/bash
-      environment:
-        GIT_SSH_COMMAND: "ssh -i {{ secrets_dir }}/GIT_SSH_KEY -o StrictHostKeyChecking=no"
 
     - name: Write derived connection string secrets
       copy:
