@@ -1,5 +1,6 @@
 services:
   airflow-worker:
+    hostname: "${AIRFLOW_WORKER_IP}"
     image: apache/airflow:latest
     env_file:
       - .env
