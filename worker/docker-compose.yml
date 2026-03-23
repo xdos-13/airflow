@@ -1,6 +1,8 @@
 services:
   airflow-worker:
     hostname: "${AIRFLOW_WORKER_IP}"
+    ports:
+      - "8793:8793"
     image: apache/airflow:latest
     env_file:
       - .env
