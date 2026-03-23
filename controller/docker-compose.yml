@@ -8,6 +8,7 @@ x-airflow-common:
     AIRFLOW__CORE__LOAD_EXAMPLES: "false"
     AIRFLOW__CORE__FERNET_KEY_CMD: "cat /run/secrets/AIRFLOW__CORE__FERNET_KEY"
     AIRFLOW__WEBSERVER__SECRET_KEY_CMD: "cat /run/secrets/AIRFLOW__WEBSERVER__SECRET_KEY"
+    AIRFLOW__API__SECRET_KEY_CMD: "cat /run/secrets/AIRFLOW__API__SECRET_KEY"
     AIRFLOW__API_AUTH__JWT_SECRET_CMD: "cat /run/secrets/AIRFLOW__API_AUTH__JWT_SECRET"
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN_CMD: "cat /run/secrets/SQL_ALCHEMY_CONN"
     AIRFLOW__CELERY__BROKER_URL_CMD: "cat /run/secrets/CELERY_BROKER_URL"
@@ -29,6 +30,7 @@ x-airflow-common:
     - SQL_ALCHEMY_CONN
     - CELERY_BROKER_URL
     - CELERY_RESULT_BACKEND
+    - AIRFLOW__API__SECRET_KEY
 
 services:
   postgres:
@@ -137,6 +139,8 @@ secrets:
     file: /opt/airflow-secrets/AIRFLOW__CORE__FERNET_KEY
   AIRFLOW__API_AUTH__JWT_SECRET:
     file: /opt/airflow-secrets/AIRFLOW__API_AUTH__JWT_SECRET
+  AIRFLOW__API__SECRET_KEY:
+    file: /opt/airflow-secrets/AIRFLOW__API__SECRET_KEY
   AIRFLOW__WEBSERVER__SECRET_KEY:
     file: /opt/airflow-secrets/AIRFLOW__WEBSERVER__SECRET_KEY
   POSTGRES_PASSWORD:
