@@ -81,17 +81,32 @@ services:
   #     - /opt/airflow-secrets/GIT_SSH_KEY:/etc/git-secret/ssh:ro
   #   restart: always
 
+  # git-sync:
+  #   image: registry.k8s.io/git-sync/git-sync:v4.2.1
+  #   environment:
+  #     GITSYNC_REPO: "https://github.com/xdos-13/dags.git"
+  #     GITSYNC_BRANCH: main
+  #     GITSYNC_ROOT: /dags
+  #     GITSYNC_PERIOD: "300s"
+  #     GITSYNC_SSH: "false"
+  #   volumes:
+  #     - /opt/airflow-data/dags:/dags
+  #   restart: always
   git-sync:
-    image: registry.k8s.io/git-sync/git-sync:v4.2.1
-    environment:
-      GITSYNC_REPO: "https://github.com/xdos-13/dags.git"
-      GITSYNC_BRANCH: main
-      GITSYNC_ROOT: /dags
-      GITSYNC_PERIOD: "300s"
-      GITSYNC_SSH: "false"
-    volumes:
-      - /opt/airflow-data/dags:/dags
-    restart: always
+      image: registry.k8s.io/git-sync/git-sync:v4.2.1
+      environment:
+        GITSYNC_REPO: "https://bitbucket.org/mo-ka/dags.git"
+        GITSYNC_BRANCH: main
+        GITSYNC_ROOT: /dags
+        GITSYNC_PERIOD: "300s"
+        GITSYNC_SSH: "false"
+        GITSYNC_USERNAME: "airflow_dag_read"
+        GITSYNC_PASSWORD: "/run/secrets/BITBUCKET_DAG_TOKEN"
+      volumes:
+        - /opt/airflow-data/dags:/dags
+      secrets:
+        - BITBUCKET_DAG_TOKEN
+      restart: always
 
   airflow-init:
     <<: *airflow-common
@@ -153,3 +168,5 @@ secrets:
     file: /opt/airflow-secrets/CELERY_BROKER_URL
   CELERY_RESULT_BACKEND:
     file: /opt/airflow-secrets/CELERY_RESULT_BACKEND
+  BITBUCKET_DAG_TOKEN:
+    file: /opt/airflow-secrets/BITBUCKET_DAG_TOKEN
