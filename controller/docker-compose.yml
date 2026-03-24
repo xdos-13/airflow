@@ -101,7 +101,7 @@ services:
         GITSYNC_PERIOD: "300s"
         GITSYNC_SSH: "false"
         GITSYNC_USERNAME: "airflow_dag_read"
-        GITSYNC_PASSWORD: "/run/secrets/BITBUCKET_DAG_TOKEN"
+        GITSYNC_PASSWORD_FILE: "/run/secrets/BITBUCKET_DAG_TOKEN"
       volumes:
         - /opt/airflow-data/dags:/dags
       secrets:
